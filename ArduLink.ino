@@ -230,7 +230,6 @@ void signal(boolean value){
 
 void send_start(){
   boolean lampstate=true;
-  digitalWrite(statusLED,HIGH);
 
   //state 0
   digitalWrite(signalLED,lampstate); //HIGH
@@ -246,11 +245,13 @@ void send1(unsigned char c){
 }
 
 void sends(char *s){
+    digitalWrite(statusLED,HIGH);
   for (int i = 0; s[i] != 0; i++){
     send(s[i]);
   }
   delay(cycle);
   signal(LOW);
+    digitalWrite(statusLED,LOW);
 }
 
 /*
@@ -357,7 +358,10 @@ boolean switchDown(){
 
 
 void loop(){
-  char st[]="Suca!";
+  char st[]="Suca!!!!";
+  for (int i=0;i<254;i++){
+    st[i]=i;}
+    st[255]=0;
   if (switchDown()){
     sendPacket(st);
   }
