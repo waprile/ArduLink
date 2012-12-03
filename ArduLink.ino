@@ -6,7 +6,7 @@
 
 
 
-#undef DEBUG 
+#define DEBUG 
 #undef DEBUG0
 
 #define PULSEWIDTH 100
@@ -14,7 +14,7 @@
 #define PULSEFRAME 1000
 
 
-int semicycle=8;
+int semicycle=16;
 int cycle=semicycle*2;
 int jitter=semicycle/4;
 
@@ -72,6 +72,9 @@ void crossover(){ //ISR for sensor pin change
   deltaT=t-t0;
   if (deltaT>cycle*2) {
     state=0;
+    #ifdef DEBUG0
+    Serial.println("char builder reset.");
+    #endif
   } //autoreset after a long silence: assume sender has died
 #ifdef DEBUG0
   Serial.print(deltaT);
@@ -141,7 +144,7 @@ void crossover(){ //ISR for sensor pin change
 #endif
     bitcount=0;
     //state=2;
-    processCharacter(incoming);
+    processCharacter(incoming, deltaT); //call the packet builder
     incoming=0;
   }
 #ifdef DEBUG0
@@ -149,13 +152,12 @@ void crossover(){ //ISR for sensor pin change
 #endif
 }
 
-void processCharacter(char c){
+void processCharacter(char c, int deltaT){
   static unsigned char state=0;
   static unsigned char checksum=0;
   static unsigned char incomingCharIdx=0;
 
 #ifdef DEBUG
-  digitalWrite(statusLED,HIGH);
   Serial.print(state);
   Serial.print(" ");
   Serial.print(c,DEC);
@@ -165,6 +167,13 @@ void processCharacter(char c){
   Serial.print(checksum);
   Serial.println();
 #endif 
+
+  //Reset packet building if the transition is arriving after a "long" time
+  if (deltaT>cycle*){
+    state=0;
+    checksum=0;
+    Serial.println("Packetizer reset");
+  }
 
   checksum+=c;
   switch (state){
@@ -183,9 +192,7 @@ void processCharacter(char c){
 
   case 2:
     incomingBuffer[incomingCharIdx++]=c; //write character into buffer
-    digitalWrite(statusLED,LOW);
     if (incomingCharIdx==packetLength) {
-      //Serial.println("Strike!");
       if (checksum==0){
         packetAvailable=true;
         incomingBuffer[incomingCharIdx]=0; //courtesy zero terminate, a valid string
@@ -199,7 +206,6 @@ void processCharacter(char c){
   }
 
 }
-
 
 
 void status(unsigned char c){
@@ -224,21 +230,23 @@ void status(unsigned char c){
 void signal(boolean value){
   static boolean boyd = true;
   static unsigned long int t=millis();
+  if (value==false) boyd=false;
   digitalWrite(signalLED,boyd);
+  /*
   Serial.print("-------------------");
-  Serial.print(millis()-t,DEC);
-  Serial.print(" ");
+   Serial.print(millis()-t,DEC);
+   Serial.print(" ");
+   t=millis();
+   */
   Serial.println(boyd?"1":"0");
   boyd = !boyd;
-  t=millis();
+
 }
 
 void send_start(){
-  boolean lampstate=true;
-  signal(lampstate); //HIGH
+  signal(true); //HIGH
   delay(semicycle); //state 1
-  lampstate = !lampstate;
-  signal(lampstate); //LOW
+  signal(true); //LOW
   delay(semicycle);
   //end with lamp off
 }
@@ -254,7 +262,7 @@ void sends(char *s){
   for (int i = 0; s[i] != 0; i++){
     send(s[i]);
   }
-  delay(cycle);
+  delay(cycle*2);
   signal(LOW);
   digitalWrite(statusLED,LOW);
 }
@@ -311,7 +319,7 @@ void send(unsigned char c){
   for(int i=7;i>=0;i--){
     if(c & (1<<i)){ //the ith bit is set we need to flip at the beginning of the symbol
       lampstate = !lampstate;
-      signal(lampstate);
+      signal(true);
 #ifdef DEBUG
       Serial.print(1);
 #endif
@@ -324,7 +332,7 @@ void send(unsigned char c){
 
     delay(semicycle); //wait another half cycle
     lampstate = !lampstate;
-    signal(lampstate);
+    signal(true);
     delay(semicycle);
   }
 #ifdef DEBUG
@@ -374,23 +382,25 @@ void loop(){
   //static char test[]="[0] What hath God  wrought?";
   static char test[]="AB";
   if (switchDown()){
-    
-    for (int i=0;i<128;i++){
-      st[i]=65+i%26;
+    for (int j=0;j<4;j++){
+      for (int i=0;i<4;i++){
+        st[i]=65+(i+j)%26;
+      }
+      st[3]=0;
+      Serial.println();
+      Serial.println(st);
+      Serial.println();
+      sendPacket(st);
+      delay(256);
     }
-    st[127]=0;
-    Serial.println();
-    //Serial.println(st);
-    Serial.println();
-    sendPacket(test);
-    delay(128);
   }
 
-  delay(10);
+  delay(2);
   if (packetAvailable){
-    Serial.println("========================================");
+    digitalWrite(statusLED,HIGH);
+    delay(500);
     Serial.println(incomingBuffer);
-    Serial.println("========================================");
+    digitalWrite(statusLED,LOW);
     packetAvailable=false;
   }
   /*
@@ -400,6 +410,7 @@ void loop(){
    Serial.println(t);
    */
 }
+
 
 
 
