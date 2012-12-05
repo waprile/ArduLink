@@ -5,7 +5,10 @@
 
 #include <Serial.h>
 
+#define RECEIVE
 
+#undef TINY
+#define UNO
 
 #undef DEBUG 
 #undef DEBUG0
@@ -14,34 +17,48 @@
 #define PULSEGAP 100
 #define PULSEFRAME 1000
 
-
-int semicycle=32;
-int cycle=semicycle*2;
-int jitter=semicycle/4;
-
+#ifdef UNO
+int semicycle=26;
 int statusLED=4;
 int sensorPin=2; //we need an interrupt
 int signalLED=3;
 int switchPin=7;
+#endif
+
+#ifdef TINY
+int semicycle=28;
+int statusLED=1;
+int signalLED=0;
+int sensorPin=3;
+int switchPin=4;
+#endif
+
+int cycle=semicycle*2;
+int jitter=semicycle/4;
+
+
+#ifdef RECEIVE
 unsigned long int t0; //previous transition
 unsigned long int t=0;    //current transition
-
 unsigned char incoming=0;
 boolean packetAvailable=false;
 unsigned char packetLength;
 char incomingBuffer[256];
+#endif
 
 void setup(){
+  #ifdef UNO
   Serial.begin(57600);
+  #endif
   pinMode(statusLED,OUTPUT);
   pinMode(signalLED,OUTPUT);
   pinMode(switchPin,INPUT);
   digitalWrite(switchPin,HIGH);
   pinMode(sensorPin,INPUT);
-#ifdef DEBUG
   selfTest();
-#endif
+  #ifdef RECEIVE
   attachInterrupt(0,crossover,CHANGE);
+  #endif
 }
 
 void selfTest(){
@@ -61,6 +78,7 @@ void selfTest(){
 
 }
 
+#ifdef RECEIVE
 void crossover(){ //ISR for sensor pin change
   static unsigned char state=0;
   static unsigned int bitcount=0;
@@ -94,13 +112,13 @@ void crossover(){ //ISR for sensor pin change
     break;
 
   case 1:
-    //another short pulse
+    //one her short pulse
     if (abs(deltaT-semicycle)<jitter){
       state=2;
     }
     break;
 
-  case 2:
+  case 2: //begin with actual data
     tmp=deltaT-semicycle;
 #ifdef DEBUG0
     Serial.print(" ");
@@ -138,7 +156,9 @@ void crossover(){ //ISR for sensor pin change
     break;
 
   default:
+    #ifdef DEBUG
     Serial.print("Oy vey!");
+    #endif
     break;
   } 
   if (bitcount==8){
@@ -180,11 +200,13 @@ void processCharacter(char c, int deltaT, boolean resetOccurred){
   if (resetOccurred || (deltaT>cycle*16)){
     state=0;
     checksum=0;
-    Serial.println("Packetizer reset deltaT= ");
-    Serial.print(deltaT);
+    #ifdef DEBUG
+    Serial.print("Packetizer reset deltaT= ");
+    Serial.println(deltaT);
     Serial.print("  >>");
     Serial.print(incomingBuffer);
     Serial.println("<<");
+    #endif
   }
 
   checksum+=c;
@@ -218,7 +240,7 @@ void processCharacter(char c, int deltaT, boolean resetOccurred){
   }
 
 }
-
+#endif 
 
 void status(unsigned char c){
   unsigned int t=millis();
@@ -298,16 +320,18 @@ void sendPacket(char *s){
   unsigned char len=0;
   unsigned char checksum=0;
   //count the characters in s and accumulate checksum by XORing values
-  Serial.println();
+
   while(s[len]!=0){
+    #ifdef DEBUG
+    Serial.println();
     Serial.print(len,DEC);
     Serial.print(" ");
     Serial.print(s[len],DEC);
-    Serial.println();
+    #endif
     checksum += s[len];
     len++;
   }
-  Serial.println();
+  
   checksum +=len; //make sure length is in the checksum too
   checksum = 256-checksum; //this way the whole packet sums to zero
   send_start();
@@ -315,6 +339,7 @@ void sendPacket(char *s){
   send(checksum);
   sends(s);
 #ifdef DEBUG
+  Serial.println();
   Serial.print("Packet length ");
   Serial.println(len,DEC);
   Serial.print("Checksum ");
@@ -392,9 +417,9 @@ boolean switchDown(){
 
 
 
-void loop(){
+void loop(){ 
+  #ifdef UNO
   char st[128];
-  //static char test[]="[0] What hath God  wrought?";
   if (switchDown()){
     for (int j=0;j<32;j++){
       for (int i=0;i<8;i++){
@@ -408,7 +433,17 @@ void loop(){
       delay(512);
     }
   }
+  #endif
+ 
+  #ifdef TINY
+  delay(256);
+  char test[]="Tiny ";
+  test[4]=65+analogRead(0)/64;
+  sendPacket(test);
+  #endif
 
+
+  #ifdef UNO
   delay(2);
   if (packetAvailable){
     digitalWrite(statusLED,HIGH);
@@ -417,12 +452,7 @@ void loop(){
     digitalWrite(statusLED,LOW);
     packetAvailable=false;
   }
-  /*
-  delay(25);
-   Serial.print(t0);
-   Serial.print(" ");
-   Serial.println(t);
-   */
+  #endif
 }
 
 
