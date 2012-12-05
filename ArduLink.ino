@@ -1,14 +1,10 @@
-
 // 0.0.1 early functionality
 // character builder reset also resets packetizer (means something was mangled)
+#include <Arduino.h>
 
-
-#include <Serial.h>
-
-#define RECEIVE
-
-#undef TINY
-#define UNO
+#undef RECEIVE
+#define TINY
+#undef UNO
 
 #undef DEBUG 
 #undef DEBUG0
@@ -18,6 +14,7 @@
 #define PULSEFRAME 1000
 
 #ifdef UNO
+#include <Serial.h>
 int semicycle=26;
 int statusLED=4;
 int sensorPin=2; //we need an interrupt
@@ -46,21 +43,6 @@ unsigned char packetLength;
 char incomingBuffer[256];
 #endif
 
-void setup(){
-  #ifdef UNO
-  Serial.begin(57600);
-  #endif
-  pinMode(statusLED,OUTPUT);
-  pinMode(signalLED,OUTPUT);
-  pinMode(switchPin,INPUT);
-  digitalWrite(switchPin,HIGH);
-  pinMode(sensorPin,INPUT);
-  selfTest();
-  #ifdef RECEIVE
-  attachInterrupt(0,crossover,CHANGE);
-  #endif
-}
-
 void selfTest(){
   unsigned short int t=128;
   boolean state=true;
@@ -77,6 +59,23 @@ void selfTest(){
   }
 
 }
+
+void setup(){
+  #ifdef UNO
+  Serial.begin(57600);
+  #endif
+  pinMode(statusLED,OUTPUT);
+  pinMode(signalLED,OUTPUT);
+  pinMode(switchPin,INPUT);
+  digitalWrite(switchPin,HIGH);
+  pinMode(sensorPin,INPUT);
+  selfTest();
+  #ifdef RECEIVE
+  attachInterrupt(0,crossover,CHANGE);
+  #endif
+}
+
+
 
 #ifdef RECEIVE
 void crossover(){ //ISR for sensor pin change
@@ -288,6 +287,43 @@ void send_start(){
   //end with lamp off
 }
 
+void send(unsigned char c){
+  static boolean lampstate=false;
+#ifdef DEBUG
+  Serial.print(c,DEC);
+  Serial.print(" ");
+  Serial.print(c,BIN);
+  Serial.print(" ");
+  Serial.print(" ");
+#endif
+  for(int i=7;i>=0;i--){
+    if(c & (1<<i)){ //the ith bit is set we need to flip at the beginning of the symbol
+      lampstate = !lampstate;
+      signal(true);
+#ifdef DEBUG
+      Serial.print(1);
+#endif
+    } 
+    else {
+#ifdef DEBUG
+      Serial.print(0);
+#endif
+    }
+
+    delay(semicycle); //wait another half cycle
+    lampstate = !lampstate;
+    signal(true);
+    delay(semicycle);
+  }
+#ifdef DEBUG
+  Serial.println();
+#endif
+
+  //digitalWrite(signalLED,LOW); //conclude the character
+  //digitalWrite(statusLED,LOW);
+
+}
+
 void send1(unsigned char c){
   send_start();
   send(c);
@@ -347,42 +383,6 @@ void sendPacket(char *s){
 #endif
 }
 
-void send(unsigned char c){
-  static boolean lampstate=false;
-#ifdef DEBUG
-  Serial.print(c,DEC);
-  Serial.print(" ");
-  Serial.print(c,BIN);
-  Serial.print(" ");
-  Serial.print(" ");
-#endif
-  for(int i=7;i>=0;i--){
-    if(c & (1<<i)){ //the ith bit is set we need to flip at the beginning of the symbol
-      lampstate = !lampstate;
-      signal(true);
-#ifdef DEBUG
-      Serial.print(1);
-#endif
-    } 
-    else {
-#ifdef DEBUG
-      Serial.print(0);
-#endif
-    }
-
-    delay(semicycle); //wait another half cycle
-    lampstate = !lampstate;
-    signal(true);
-    delay(semicycle);
-  }
-#ifdef DEBUG
-  Serial.println();
-#endif
-
-  //digitalWrite(signalLED,LOW); //conclude the character
-  //digitalWrite(statusLED,LOW);
-
-}
 
 void sendPulseTDM(char c, boolean wait_for_channel){
   for(int i=7;i>=0;i--){
@@ -438,7 +438,7 @@ void loop(){
   #ifdef TINY
   delay(256);
   char test[]="Tiny ";
-  test[4]=65+analogRead(0)/64;
+  test[4]=65+analogRead(1)/64;
   sendPacket(test);
   #endif
 
